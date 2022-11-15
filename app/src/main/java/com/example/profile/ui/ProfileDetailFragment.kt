@@ -8,12 +8,16 @@ import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Bundle
+import android.os.Environment
 import android.provider.MediaStore
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AlertDialog
+import androidx.core.content.ContentProviderCompat.requireContext
+import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.activityViewModels
 import androidx.navigation.fragment.findNavController
@@ -24,6 +28,8 @@ import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.IOException
+import java.text.SimpleDateFormat
+import java.util.*
 
 
 @AndroidEntryPoint
@@ -31,7 +37,8 @@ class ProfileDetailFragment : Fragment() {
     private val RC_GALLERY = 100
     private var imageUri: Uri? = null
     private lateinit var binding: FragmentProfileDetailBinding
-    private val viewModel:ProfileViewModel by activityViewModels()
+    private val viewModel: ProfileViewModel by activityViewModels()
+    private var file: Uri? = null
     override fun onCreateView(
         inflater: LayoutInflater, container: ViewGroup?,
         savedInstanceState: Bundle?
@@ -43,9 +50,9 @@ class ProfileDetailFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        if (viewModel.selectedProfile!=null){
-            val profile=viewModel.selectedProfile
-            imageUri=Uri.parse(profile?.profilePhoto)
+        if (viewModel.selectedProfile != null) {
+            val profile = viewModel.selectedProfile
+            imageUri = Uri.parse(profile?.profilePhoto)
             binding.profileImg.setImageURI(Uri.parse(profile?.profilePhoto))
             binding.etFirstName.setText(profile?.firstName)
             binding.etLastName.setText(profile?.lastName)
@@ -55,15 +62,15 @@ class ProfileDetailFragment : Fragment() {
         }
 
         binding.saveBtn.setOnClickListener {
-            if (binding.etFirstName.text.isEmpty() || binding.etLastName.text.isEmpty()){
+            if (binding.etFirstName.text.isEmpty() || binding.etLastName.text.isEmpty()) {
                 Toast.makeText(requireContext(), "fill all fields", Toast.LENGTH_SHORT).show()
-            }else {
+            } else {
                 if (viewModel.selectedProfile != null) {
                     val profile = Profile(
                         binding.etFirstName.text.toString(),
                         binding.etLastName.text.toString(),
                         imageUri.toString(),
-                        id= viewModel.selectedProfile!!.id
+                        id = viewModel.selectedProfile!!.id
                     )
                     viewModel.updateProfile(profile)
                     findNavController().popBackStack()
@@ -88,17 +95,19 @@ class ProfileDetailFragment : Fragment() {
         super.onActivityResult(requestCode, resultCode, data)
         if (resultCode == Activity.RESULT_OK) {
             if (requestCode == 0) {
-                binding.profileImg.setImageBitmap(data?.extras?.get("data") as Bitmap?)
-                (data?.extras?.get("data") as Bitmap?)?.let { saveToInternalStorage(it) }
-                imageUri =
-                    (data?.extras?.get("data") as Bitmap?)?.let {
-                        getImageUri(requireContext(),
-                            it
-                        )
-                    }
 
-            }else if (requestCode==1){
-                imageUri =data?.data!!
+                binding.profileImg.setImageURI(file)
+//                binding.profileImg.setImageBitmap(data?.extras?.get("data") as Bitmap?)
+//                (data?.extras?.get("data") as Bitmap?)?.let { saveToInternalStorage(it) }
+//                imageUri =
+//                    (data?.extras?.get("data") as Bitmap?)?.let {
+//                        getImageUri(requireContext(),
+//                            it
+//                        )
+//                    }
+
+            } else if (requestCode == 1) {
+                imageUri = data?.data!!
                 binding.profileImg.setImageURI(imageUri)
 
                 val contentResolver = requireContext().contentResolver
@@ -123,7 +132,16 @@ class ProfileDetailFragment : Fragment() {
             optionsMenu
         ) { dialogInterface, i ->
             if (optionsMenu[i] == "Take Photo") {
+
                 val takePicture = Intent(MediaStore.ACTION_IMAGE_CAPTURE)
+                file = getOutputMediaFile()?.let {
+                    FileProvider.getUriForFile(
+                        requireContext(),
+                        "com.example.profile",
+                        it
+                    )
+                }
+                takePicture.putExtra(MediaStore.EXTRA_OUTPUT, file);
                 startActivityForResult(takePicture, 0)
             } else if (optionsMenu[i] == "Choose from Gallery") {
                 val pickPhoto = Intent(
@@ -138,34 +156,21 @@ class ProfileDetailFragment : Fragment() {
         builder.show()
     }
 
-    private fun saveToInternalStorage(bitmapImage: Bitmap): String {
-        val cw = ContextWrapper(requireContext())
-        // path to /data/data/yourapp/app_data/imageDir
-        val directory: File = cw.getDir("imageDir", MODE_PRIVATE)
-        // Create imageDir
-        val mypath = File(directory, "profile.jpg")
-        var fos: FileOutputStream? = null
-        try {
-            fos = FileOutputStream(mypath)
-            // Use the compress method on the BitMap object to write image to the OutputStream
-            bitmapImage.compress(Bitmap.CompressFormat.PNG, 100, fos)
-        } catch (e: Exception) {
-            e.printStackTrace()
-        } finally {
-            try {
-                fos?.close()
-            } catch (e: IOException) {
-                e.printStackTrace()
+    private fun getOutputMediaFile(): File? {
+        val mediaStorageDir = File(
+            Environment.getExternalStoragePublicDirectory(
+                Environment.DIRECTORY_PICTURES
+            ), "FotoAula"
+        )
+        if (!mediaStorageDir.exists()) {
+            if (!mediaStorageDir.mkdirs()) {
+                return null
             }
         }
-        return directory.absolutePath
-    }
-
-    fun getImageUri(inContext: Context, inImage: Bitmap): Uri? {
-        val bytes = ByteArrayOutputStream()
-        inImage.compress(Bitmap.CompressFormat.JPEG, 100, bytes)
-        val path =
-            MediaStore.Images.Media.insertImage(inContext.contentResolver, inImage, "Title", null)
-        return Uri.parse(path)
+        val timeStamp: String = SimpleDateFormat("yyyyMMdd_HHmmss").format(Date())
+        return File(
+            mediaStorageDir.path + File.separator +
+                    "IMG_" + timeStamp + ".jpg"
+        )
     }
 }
